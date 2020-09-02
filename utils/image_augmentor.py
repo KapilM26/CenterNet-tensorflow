@@ -78,7 +78,7 @@ def image_augmentor(image, input_shape, data_format, output_shape, zoom_size=Non
         ww = xmax -xmin
     image_copy = image
     if data_format == 'channels_first':
-        image = tf.transpose(image, [1, 2, 0])
+        image = tf.transpose(a=image, perm=[1, 2, 0])
     input_h, input_w, input_c = input_shape[0], input_shape[1], input_shape[2]
     output_h, output_w = output_shape
     if zoom_size is not None:
@@ -88,35 +88,34 @@ def image_augmentor(image, input_shape, data_format, output_shape, zoom_size=Non
     if keep_aspect_ratios:
         if fill_mode in ['NEAREST_NEIGHBOR', 'BILINEAR', 'BICUBIC']:
             zoom_ratio = tf.cond(
-                tf.less(zoom_or_output_h / input_h, zoom_or_output_w / input_w),
-                lambda: tf.cast(zoom_or_output_h / input_h, tf.float32),
-                lambda: tf.cast(zoom_or_output_w / input_w, tf.float32)
+                pred=tf.less(zoom_or_output_h / input_h, zoom_or_output_w / input_w),
+                true_fn=lambda: tf.cast(zoom_or_output_h / input_h, tf.float32),
+                false_fn=lambda: tf.cast(zoom_or_output_w / input_w, tf.float32)
             )
             resize_h, resize_w = tf.cond(
-                tf.less(zoom_or_output_h / input_h, zoom_or_output_w / input_w),
-                lambda: (zoom_or_output_h,tf.cast(tf.cast(input_w, tf.float32) * zoom_ratio, tf.int32)),
-                lambda: (tf.cast(tf.cast(input_h, tf.float32)*zoom_ratio, tf.int32), zoom_or_output_w)
+                pred=tf.less(zoom_or_output_h / input_h, zoom_or_output_w / input_w),
+                true_fn=lambda: (zoom_or_output_h,tf.cast(tf.cast(input_w, tf.float32) * zoom_ratio, tf.int32)),
+                false_fn=lambda: (tf.cast(tf.cast(input_h, tf.float32)*zoom_ratio, tf.int32), zoom_or_output_w)
             )
-            image = tf.image.resize_images(
+            image = tf.image.resize(
                 image, [resize_h, resize_w], fill_mode_project[fill_mode],
-                align_corners=True,
             )
             if ground_truth is not None:
                 ymin, ymax = ymin * zoom_ratio, ymax * zoom_ratio
                 xmin, xmax = xmin * zoom_ratio, xmax * zoom_ratio
             image = tf.pad(
-                image, [[0, zoom_or_output_h-resize_h], [0, zoom_or_output_w-resize_w], [0, 0]],
+                tensor=image, paddings=[[0, zoom_or_output_h-resize_h], [0, zoom_or_output_w-resize_w], [0, 0]],
                 mode='CONSTANT', constant_values=constant_values
             )
         else:
             image = tf.pad(
-                image, [[0, zoom_or_output_h-input_h], [0, zoom_or_output_w-input_w], [0, 0]],
+                tensor=image, paddings=[[0, zoom_or_output_h-input_h], [0, zoom_or_output_w-input_w], [0, 0]],
                 mode='CONSTANT', constant_values=constant_values
             )
     else:
-        image = tf.image.resize_images(
+        image = tf.image.resize(
             image, [zoom_or_output_h, zoom_or_output_w], fill_mode_project[fill_mode],
-            align_corners=True, preserve_aspect_ratio=False
+            preserve_aspect_ratio=False
         )
         if ground_truth is not None:
             zoom_ratio_y = tf.cast(zoom_or_output_h / input_h, tf.float32)
@@ -128,8 +127,8 @@ def image_augmentor(image, input_shape, data_format, output_shape, zoom_size=Non
         if crop_method == 'random':
             random_h = zoom_or_output_h - output_h
             random_w = zoom_or_output_w - output_w
-            crop_h = tf.random_uniform([], 0, random_h, tf.int32)
-            crop_w = tf.random_uniform([], 0, random_w, tf.int32)
+            crop_h = tf.random.uniform([], 0, random_h, tf.int32)
+            crop_w = tf.random.uniform([], 0, random_w, tf.int32)
         else:
             crop_h = (zoom_or_output_h - output_h) // 2
             crop_w = (zoom_or_output_w - output_w) // 2
@@ -141,46 +140,46 @@ def image_augmentor(image, input_shape, data_format, output_shape, zoom_size=Non
             xmin, xmax = xmin - tf.cast(crop_w, tf.float32), xmax - tf.cast(crop_w, tf.float32)
 
     if flip_prob is not None:
-        flip_td_prob = tf.random_uniform([], 0., 1.)
-        flip_lr_prob = tf.random_uniform([], 0., 1.)
+        flip_td_prob = tf.random.uniform([], 0., 1.)
+        flip_lr_prob = tf.random.uniform([], 0., 1.)
         image = tf.cond(
-            tf.less(flip_td_prob, flip_prob[0]),
-            lambda: tf.reverse(image, [0]),
-            lambda: image
+            pred=tf.less(flip_td_prob, flip_prob[0]),
+            true_fn=lambda: tf.reverse(image, [0]),
+            false_fn=lambda: image
         )
         image = tf.cond(
-            tf.less(flip_lr_prob, flip_prob[1]),
-            lambda: tf.reverse(image, [1]),
-            lambda: image
+            pred=tf.less(flip_lr_prob, flip_prob[1]),
+            true_fn=lambda: tf.reverse(image, [1]),
+            false_fn=lambda: image
         )
         if ground_truth is not None:
             ymax, ymin = tf.cond(
-                tf.less(flip_td_prob, flip_prob[0]),
-                lambda: (output_h - ymin -1., output_h - ymax -1.),
-                lambda: (ymax, ymin)
+                pred=tf.less(flip_td_prob, flip_prob[0]),
+                true_fn=lambda: (output_h - ymin -1., output_h - ymax -1.),
+                false_fn=lambda: (ymax, ymin)
             )
             xmax, xmin = tf.cond(
-                tf.less(flip_lr_prob, flip_prob[1]),
-                lambda: (output_w - xmin -1., output_w - xmax - 1.),
-                lambda: (xmax, xmin)
+                pred=tf.less(flip_lr_prob, flip_prob[1]),
+                true_fn=lambda: (output_w - xmin -1., output_w - xmax - 1.),
+                false_fn=lambda: (xmax, xmin)
             )
     if color_jitter_prob is not None:
-        bcs = tf.random_uniform([3], 0., 1.)
-        image = tf.cond(bcs[0] < color_jitter_prob,
-                        lambda: tf.image.adjust_brightness(image, tf.random_uniform([], 0., 0.3)),
-                        lambda: image
+        bcs = tf.random.uniform([3], 0., 1.)
+        image = tf.cond(pred=bcs[0] < color_jitter_prob,
+                        true_fn=lambda: tf.image.adjust_brightness(image, tf.random.uniform([], 0., 0.3)),
+                        false_fn=lambda: image
                 )
-        image = tf.cond(bcs[1] < color_jitter_prob,
-                        lambda: tf.image.adjust_contrast(image, tf.random_uniform([], 0.8, 1.2)),
-                        lambda: image
+        image = tf.cond(pred=bcs[1] < color_jitter_prob,
+                        true_fn=lambda: tf.image.adjust_contrast(image, tf.random.uniform([], 0.8, 1.2)),
+                        false_fn=lambda: image
                 )
-        image = tf.cond(bcs[2] < color_jitter_prob,
-                        lambda: tf.image.adjust_hue(image, tf.random_uniform([], -0.1, 0.1)),
-                        lambda: image
+        image = tf.cond(pred=bcs[2] < color_jitter_prob,
+                        true_fn=lambda: tf.image.adjust_hue(image, tf.random.uniform([], -0.1, 0.1)),
+                        false_fn=lambda: image
                 )
 
     if rotate is not None:
-        angles = tf.random_uniform([], rotate[1], rotate[2]) * 3.1415926 / 180.
+        angles = tf.random.uniform([], rotate[1], rotate[2]) * 3.1415926 / 180.
         image = tf.contrib.image.rotate(image, angles, 'BILINEAR')
         if ground_truth is not None:
             angles = -angles
@@ -196,49 +195,49 @@ def image_augmentor(image, input_shape, data_format, output_shape, zoom_size=Non
             xminymax_y = xmin * tf.sin(angles) + ymax * tf.cos(angles) + offset_y
             xmaxymin_x = xmax * tf.cos(angles) - ymin * tf.sin(angles) + offset_x
             xmaxymin_y = xmax * tf.sin(angles) + ymin * tf.cos(angles) + offset_y
-            xmin = tf.reduce_min(tf.concat([xminymin_x, xmaxymax_x, xminymax_x, xmaxymin_x], axis=-1), axis=-1, keepdims=True)
-            ymin = tf.reduce_min(tf.concat([xminymin_y, xmaxymax_y, xminymax_y, xmaxymin_y], axis=-1), axis=-1, keepdims=True)
-            xmax = tf.reduce_max(tf.concat([xminymin_x, xmaxymax_x, xminymax_x, xmaxymin_x], axis=-1), axis=-1, keepdims=True)
-            ymax = tf.reduce_max(tf.concat([xminymin_y, xmaxymax_y, xminymax_y, xmaxymin_y], axis=-1), axis=-1, keepdims=True)
+            xmin = tf.reduce_min(input_tensor=tf.concat([xminymin_x, xmaxymax_x, xminymax_x, xmaxymin_x], axis=-1), axis=-1, keepdims=True)
+            ymin = tf.reduce_min(input_tensor=tf.concat([xminymin_y, xmaxymax_y, xminymax_y, xmaxymin_y], axis=-1), axis=-1, keepdims=True)
+            xmax = tf.reduce_max(input_tensor=tf.concat([xminymin_x, xmaxymax_x, xminymax_x, xmaxymin_x], axis=-1), axis=-1, keepdims=True)
+            ymax = tf.reduce_max(input_tensor=tf.concat([xminymin_y, xmaxymax_y, xminymax_y, xmaxymin_y], axis=-1), axis=-1, keepdims=True)
     if data_format == 'channels_first':
-        image = tf.transpose(image, [2, 0, 1])
+        image = tf.transpose(a=image, perm=[2, 0, 1])
     if ground_truth is not None:
         y_center = (ymin + ymax) / 2.
         x_center = (xmin + xmax) / 2.
         y_mask = tf.cast(y_center > 0., tf.float32) * tf.cast(y_center < output_h - 1., tf.float32)
         x_mask = tf.cast(x_center > 0., tf.float32) * tf.cast(x_center < output_w - 1., tf.float32)
         mask = tf.reshape((x_mask * y_mask) > 0., [-1])
-        ymin = tf.boolean_mask(ymin, mask)
-        xmin = tf.boolean_mask(xmin, mask)
-        ymax = tf.boolean_mask(ymax, mask)
-        xmax = tf.boolean_mask(xmax, mask)
-        class_id = tf.boolean_mask(class_id, mask)
-        ymin = tf.where(ymin < 0., ymin - ymin, ymin)
-        xmin = tf.where(xmin < 0., xmin - xmin, xmin)
-        ymax = tf.where(ymax < 0., ymax - ymax, ymax)
-        xmax = tf.where(xmax < 0., xmax - xmax, xmax)
-        ymin = tf.where(ymin > output_h - 1., ymin - ymin + output_h - 1., ymin)
-        xmin = tf.where(xmin > output_w - 1., xmin - xmin + output_w - 1., xmin)
-        ymax = tf.where(ymax > output_h - 1., ymax - ymax + output_h - 1., ymax)
-        xmax = tf.where(xmax > output_w - 1., xmax - xmax + output_w - 1., xmax)
+        ymin = tf.boolean_mask(tensor=ymin, mask=mask)
+        xmin = tf.boolean_mask(tensor=xmin, mask=mask)
+        ymax = tf.boolean_mask(tensor=ymax, mask=mask)
+        xmax = tf.boolean_mask(tensor=xmax, mask=mask)
+        class_id = tf.boolean_mask(tensor=class_id, mask=mask)
+        ymin = tf.compat.v1.where(ymin < 0., ymin - ymin, ymin)
+        xmin = tf.compat.v1.where(xmin < 0., xmin - xmin, xmin)
+        ymax = tf.compat.v1.where(ymax < 0., ymax - ymax, ymax)
+        xmax = tf.compat.v1.where(xmax < 0., xmax - xmax, xmax)
+        ymin = tf.compat.v1.where(ymin > output_h - 1., ymin - ymin + output_h - 1., ymin)
+        xmin = tf.compat.v1.where(xmin > output_w - 1., xmin - xmin + output_w - 1., xmin)
+        ymax = tf.compat.v1.where(ymax > output_h - 1., ymax - ymax + output_h - 1., ymax)
+        xmax = tf.compat.v1.where(xmax > output_w - 1., xmax - xmax + output_w - 1., xmax)
         y = (ymin + ymax) / 2.
         x = (xmin + xmax) / 2.
         h = ymax - ymin
         w = xmax - xmin
         ground_truth_ = tf.concat([y, x, h, w, class_id], axis=-1)
 
-        if tf.shape(ground_truth_)[0] == 0:
+        if tf.shape(input=ground_truth_)[0] == 0:
             if pad_truth_to is not None:
                 ground_truth_ = tf.concat([yy, xx, hh, ww, class_id], axis=-1)
                 ground_truth = tf.pad(
-                                ground_truth_, [[0, pad_truth_to-tf.shape(ground_truth)[0]], [0, 0]],
+                                tensor=ground_truth_, paddings=[[0, pad_truth_to-tf.shape(input=ground_truth)[0]], [0, 0]],
                                 constant_values=-1.0
                             )
             return image_copy, ground_truth
         else:
             if pad_truth_to is not None:
                 ground_truth = tf.pad(
-                                ground_truth_, [[0, pad_truth_to-tf.shape(ground_truth_)[0]], [0, 0]],
+                                tensor=ground_truth_, paddings=[[0, pad_truth_to-tf.shape(input=ground_truth_)[0]], [0, 0]],
                                 constant_values=-1.0
                             )
             return image, ground_truth

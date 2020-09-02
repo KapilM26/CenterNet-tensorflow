@@ -35,7 +35,7 @@ def xml_to_example(xmlpath, imgpath):
     root = xml.getroot()
     imgname = root.find('filename').text
     imgname = os.path.join(imgpath, imgname)
-    image = tf.gfile.GFile(imgname, 'rb').read()
+    image = tf.io.gfile.GFile(imgname, 'rb').read()
     size = root.find('size')
     height = int(size.find('height').text)
     width = int(size.find('width').text)
@@ -63,22 +63,22 @@ def xml_to_example(xmlpath, imgpath):
 
 
 def dataset2tfrecord(xml_dir, img_dir, output_dir, name, total_shards=5):
-    if not tf.gfile.Exists(output_dir):
-        tf.gfile.MakeDirs(output_dir)
+    if not tf.io.gfile.exists(output_dir):
+        tf.io.gfile.makedirs(output_dir)
         print(output_dir, 'does not exist, create it done')
     else:
-        if len(tf.gfile.ListDirectory(output_dir)) == 0:
+        if len(tf.io.gfile.listdir(output_dir)) == 0:
             print(output_dir, 'already exist, need not create new')
         else:
             warnings.warn(output_dir + ' is not empty!', UserWarning)
     outputfiles = []
-    xmllist = tf.gfile.Glob(os.path.join(xml_dir, '*.xml'))
+    xmllist = tf.io.gfile.glob(os.path.join(xml_dir, '*.xml'))
     num_per_shard = int(math.ceil(len(xmllist)) / float(total_shards))
     for shard_id in range(total_shards):
         outputname = '%s_%05d-of-%05d.tfrecord' % (name, shard_id+1, total_shards)
         outputname = os.path.join(output_dir, outputname)
         outputfiles.append(outputname)
-        with tf.python_io.TFRecordWriter(outputname) as tf_writer:
+        with tf.io.TFRecordWriter(outputname) as tf_writer:
             start_ndx = shard_id * num_per_shard
             end_ndx = min((shard_id+1) * num_per_shard, len(xmllist))
             for i in range(start_ndx, end_ndx):
@@ -93,17 +93,18 @@ def dataset2tfrecord(xml_dir, img_dir, output_dir, name, total_shards=5):
 
 
 def parse_function(data, config):
-        features = tf.parse_single_example(data, features={
-            'image': tf.FixedLenFeature([], tf.string),
-            'shape': tf.FixedLenFeature([], tf.string),
-            'ground_truth': tf.FixedLenFeature([], tf.string)
+        features = tf.io.parse_single_example(serialized=data, features={
+            'image': tf.io.FixedLenFeature([], tf.string),
+            'shape': tf.io.FixedLenFeature([], tf.string),
+            'ground_truth': tf.io.FixedLenFeature([], tf.string)
         })
-        shape = tf.decode_raw(features['shape'], tf.int32)
-        ground_truth = tf.decode_raw(features['ground_truth'], tf.float32)
+        shape = tf.io.decode_raw(features['shape'], tf.int32)
+        ground_truth = tf.io.decode_raw(features['ground_truth'], tf.float32)
         shape = tf.reshape(shape, [3])
         ground_truth = tf.reshape(ground_truth, [-1, 5])
         images = tf.image.decode_jpeg(features['image'], channels=3)
-        images = tf.cast(tf.reshape(images, shape), tf.float32)
+        #images = tf.cast(tf.reshape(images, shape), tf.float32)
+        images = tf.cast(images,tf.float32)
         images, ground_truth = image_augmentor(image=images,
                                                input_shape=shape,
                                                ground_truth=ground_truth,
@@ -115,7 +116,7 @@ def parse_function(data, config):
 def get_generator(tfrecords, batch_size, buffer_size, image_preprocess_config):
     data = tf.data.TFRecordDataset(tfrecords)
     data = data.map(lambda x: parse_function(x, image_preprocess_config)).shuffle(buffer_size=buffer_size).batch(batch_size, drop_remainder=True).repeat()
-    iterator = tf.data.Iterator.from_structure(data.output_types, data.output_shapes)
+    iterator = tf.compat.v1.data.Iterator.from_structure(tf.compat.v1.data.get_output_types(data), tf.compat.v1.data.get_output_shapes(data))
     init_op = iterator.make_initializer(data)
     return init_op, iterator
 

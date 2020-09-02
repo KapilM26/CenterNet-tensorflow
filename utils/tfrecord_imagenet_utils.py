@@ -14,7 +14,7 @@ from utils.image_augmentor import image_augmentor
 
 class ImageReader(object):
         def __init__(self):
-            self._decode_jpeg_data = tf.placeholder(dtype=tf.string)
+            self._decode_jpeg_data = tf.compat.v1.placeholder(dtype=tf.string)
             self._decode_jpeg = tf.image.decode_jpeg(self._decode_jpeg_data, channels=3)
 
         def decode_jpeg(self, sess, image_data):
@@ -43,16 +43,16 @@ def bytes_feature(values):
 
 
 def dataset2tfrecord(img_dir, output_dir, name, total_shards=50):
-    if not tf.gfile.Exists(output_dir):
-        tf.gfile.MakeDirs(output_dir)
+    if not tf.io.gfile.exists(output_dir):
+        tf.io.gfile.makedirs(output_dir)
         print(output_dir, 'does not exist, create it done')
     else:
-        if len(tf.gfile.ListDirectory(output_dir)) == 0:
+        if len(tf.io.gfile.listdir(output_dir)) == 0:
             print(output_dir, 'already exist, need not create new')
         else:
             warnings.warn(output_dir + ' is not empty!', UserWarning)
     image_reader = ImageReader()
-    sess = tf.Session()
+    sess = tf.compat.v1.Session()
     outputfiles = []
     directories = []
     class_names = []
@@ -72,14 +72,14 @@ def dataset2tfrecord(img_dir, output_dir, name, total_shards=50):
         outputname = '%s_%05d-of-%05d.tfrecord' % (name, shard_id+1, total_shards)
         outputname = os.path.join(output_dir, outputname)
         outputfiles.append(outputname)
-        with tf.python_io.TFRecordWriter(outputname) as tf_writer:
+        with tf.io.TFRecordWriter(outputname) as tf_writer:
             start_ndx = shard_id * num_per_shard
             end_ndx = min((shard_id+1) * num_per_shard, len(imglist))
             for i in range(start_ndx, end_ndx):
                 sys.stdout.write('\r>> Converting image %d/%d shard %d/%d' % (
                     i+1, len(imglist), shard_id+1, total_shards))
                 sys.stdout.flush()
-                image_data = tf.gfile.GFile(imglist[i], 'rb').read()
+                image_data = tf.io.gfile.GFile(imglist[i], 'rb').read()
                 shape = image_reader.read_image_dims(sess, image_data)
                 shape = np.asarray(shape, np.int32)
                 class_name = os.path.basename(os.path.dirname(imglist[i]))
@@ -98,12 +98,12 @@ def dataset2tfrecord(img_dir, output_dir, name, total_shards=50):
 
 
 def parse_function(data, config):
-        features = tf.parse_single_example(data, features={
-            'image': tf.FixedLenFeature([], tf.string),
-            'shape': tf.FixedLenFeature([], tf.string),
-            'label': tf.FixedLenFeature([], tf.int64)
+        features = tf.io.parse_single_example(serialized=data, features={
+            'image': tf.io.FixedLenFeature([], tf.string),
+            'shape': tf.io.FixedLenFeature([], tf.string),
+            'label': tf.io.FixedLenFeature([], tf.int64)
         })
-        shape = tf.decode_raw(features['shape'], tf.int32)
+        shape = tf.io.decode_raw(features['shape'], tf.int32)
         label = tf.cast(features['label'], tf.int64)
         shape = tf.reshape(shape, [3])
         images = tf.image.decode_jpeg(features['image'], channels=3)
@@ -118,7 +118,7 @@ def parse_function(data, config):
 def get_generator(tfrecords, batch_size, buffer_size, image_preprocess_config):
     data = tf.data.TFRecordDataset(tfrecords)
     data = data.map(lambda x: parse_function(x, image_preprocess_config)).shuffle(buffer_size=buffer_size).batch(batch_size, drop_remainder=True).repeat()
-    iterator = tf.data.Iterator.from_structure(data.output_types, data.output_shapes)
+    iterator = tf.compat.v1.data.Iterator.from_structure(data.output_types, data.output_shapes)
     init_op = iterator.make_initializer(data)
     return init_op, iterator
 

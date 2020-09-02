@@ -5,6 +5,7 @@ import tensorflow as tf
 import numpy as np
 import sys
 import os
+from tensorflow.keras.utils import Progbar
 
 
 class CenterNet:
@@ -38,7 +39,7 @@ class CenterNet:
             self.score_threshold = config['score_threshold']
             self.top_k_results_output = config['top_k_results_output']
 
-        self.global_step = tf.get_variable(name='global_step', initializer=tf.constant(0), trainable=False)
+        self.global_step = tf.compat.v1.get_variable(name='global_step', initializer=tf.constant(0), trainable=False)
         self.is_training = True
 
         self._define_inputs()
@@ -51,8 +52,8 @@ class CenterNet:
     def _define_inputs(self):
         shape = [self.batch_size]
         shape.extend(self.data_shape)
-        mean = tf.convert_to_tensor([0.485, 0.456, 0.406], dtype=tf.float32)
-        std = tf.convert_to_tensor([0.229, 0.224, 0.225], dtype=tf.float32)
+        mean = tf.convert_to_tensor(value=[0.485, 0.456, 0.406], dtype=tf.float32)
+        std = tf.convert_to_tensor(value=[0.229, 0.224, 0.225], dtype=tf.float32)
         if self.data_format == 'channels_last':
             mean = tf.reshape(mean, [1, 1, 1, 3])
             std = tf.reshape(std, [1, 1, 1, 3])
@@ -64,13 +65,13 @@ class CenterNet:
             self.images.set_shape(shape)
             self.images = (self.images / 255. - mean) / std
         else:
-            self.images = tf.placeholder(tf.float32, shape, name='images')
+            self.images = tf.compat.v1.placeholder(tf.float32, shape, name='images')
             self.images = (self.images / 255. - mean) / std
-            self.ground_truth = tf.placeholder(tf.float32, [self.batch_size, None, 5], name='labels')
-        self.lr = tf.placeholder(dtype=tf.float32, shape=[], name='lr')
+            self.ground_truth = tf.compat.v1.placeholder(tf.float32, [self.batch_size, None, 5], name='labels')
+        self.lr = tf.compat.v1.placeholder(dtype=tf.float32, shape=[], name='lr')
 
     def _build_graph(self):
-        with tf.variable_scope('backone'):
+        with tf.compat.v1.variable_scope('backone'):
             conv = self._conv_bn_activation(
                 bottom=self.images,
                 filters=16,
@@ -109,7 +110,7 @@ class CenterNet:
             residual = self._avg_pooling(residual, 2, 2)
             dla_stage6 = self._max_pooling(dla_stage6, 2, 2)
             dla_stage6 = dla_stage6 + residual
-        with tf.variable_scope('upsampling'):
+        with tf.compat.v1.variable_scope('upsampling'):
             dla_stage6 = self._conv_bn_activation(dla_stage6, 256, 1, 1)
             dla_stage6_5 = self._dconv_bn_activation(dla_stage6, 256, 4, 2)
             dla_stage6_4 = self._dconv_bn_activation(dla_stage6_5, 256, 4, 2)
@@ -128,15 +129,15 @@ class CenterNet:
             features = self._conv_bn_activation(features, 256, 1, 1)
             stride = 4.0
 
-        with tf.variable_scope('center_detector'):
+        with tf.compat.v1.variable_scope('center_detector'):
             keypoints = self._conv_bn_activation(features, self.num_classes, 3, 1, None)
             offset = self._conv_bn_activation(features, 2, 3, 1, None)
             size = self._conv_bn_activation(features, 2, 3, 1, None)
             if self.data_format == 'channels_first':
-                keypoints = tf.transpose(keypoints, [0, 2, 3, 1])
-                offset = tf.transpose(offset, [0, 2, 3, 1])
-                size = tf.transpose(size, [0, 2, 3, 1])
-            pshape = [tf.shape(offset)[1], tf.shape(offset)[2]]
+                keypoints = tf.transpose(a=keypoints, perm=[0, 2, 3, 1])
+                offset = tf.transpose(a=offset, perm=[0, 2, 3, 1])
+                size = tf.transpose(a=size, perm=[0, 2, 3, 1])
+            pshape = [tf.shape(input=offset)[1], tf.shape(input=offset)[2]]
 
             h = tf.range(0., tf.cast(pshape[0], tf.float32), dtype=tf.float32)
             w = tf.range(0., tf.cast(pshape[1], tf.float32), dtype=tf.float32)
@@ -149,10 +150,10 @@ class CenterNet:
                                                         stride, pshape)
                     total_loss.append(loss)
 
-                self.loss = tf.reduce_mean(total_loss) + self.weight_decay * tf.add_n(
-                    [tf.nn.l2_loss(var) for var in tf.trainable_variables()])
-                optimizer = tf.train.AdamOptimizer(self.lr)
-                update_ops = tf.get_collection(tf.GraphKeys.UPDATE_OPS)
+                self.loss = tf.reduce_mean(input_tensor=total_loss) + self.weight_decay * tf.add_n(
+                    [tf.nn.l2_loss(var) for var in tf.compat.v1.trainable_variables()])
+                optimizer = tf.compat.v1.train.AdamOptimizer(self.lr)
+                update_ops = tf.compat.v1.get_collection(tf.compat.v1.GraphKeys.UPDATE_OPS)
                 train_op = optimizer.minimize(self.loss, global_step=self.global_step)
                 self.train_op = tf.group([update_ops, train_op])
             else:
@@ -160,7 +161,7 @@ class CenterNet:
                 meshgrid_y = tf.expand_dims(meshgrid_y, axis=-1)
                 meshgrid_x = tf.expand_dims(meshgrid_x, axis=-1)
                 center = tf.concat([meshgrid_y, meshgrid_x], axis=-1)
-                category = tf.expand_dims(tf.squeeze(tf.argmax(keypoints, axis=-1, output_type=tf.int32)), axis=-1)
+                category = tf.expand_dims(tf.squeeze(tf.argmax(input=keypoints, axis=-1, output_type=tf.int32)), axis=-1)
                 meshgrid_xyz = tf.concat([tf.zeros_like(category), tf.cast(center, tf.int32), category], axis=-1)
                 keypoints = tf.gather_nd(keypoints, meshgrid_xyz)
                 keypoints = tf.expand_dims(keypoints, axis=0)
@@ -173,12 +174,12 @@ class CenterNet:
                 bbox_yx = tf.reshape(center+offset, [-1, 2])
                 bbox_hw = tf.reshape(size, [-1, 2])
                 score_mask = scores > self.score_threshold
-                scores = tf.boolean_mask(scores, score_mask)
-                class_id = tf.boolean_mask(class_id, score_mask)
-                bbox_yx = tf.boolean_mask(bbox_yx, score_mask)
-                bbox_hw = tf.boolean_mask(bbox_hw, score_mask)
+                scores = tf.boolean_mask(tensor=scores, mask=score_mask)
+                class_id = tf.boolean_mask(tensor=class_id, mask=score_mask)
+                bbox_yx = tf.boolean_mask(tensor=bbox_yx, mask=score_mask)
+                bbox_hw = tf.boolean_mask(tensor=bbox_hw, mask=score_mask)
                 bbox = tf.concat([bbox_yx-bbox_hw/2., bbox_yx+bbox_hw/2.], axis=-1) * stride
-                num_select = tf.cond(tf.shape(scores)[0] > self.top_k_results_output, lambda: self.top_k_results_output, lambda: tf.shape(scores)[0])
+                num_select = tf.cond(pred=tf.shape(input=scores)[0] > self.top_k_results_output, true_fn=lambda: self.top_k_results_output, false_fn=lambda: tf.shape(input=scores)[0])
                 select_scores, select_indices = tf.nn.top_k(scores, num_select)
                 select_class_id = tf.gather(class_id, select_indices)
                 select_bbox = tf.gather(bbox, select_indices)
@@ -186,7 +187,7 @@ class CenterNet:
 
     def _compute_one_image_loss(self, keypoints, offset, size, ground_truth, meshgrid_y, meshgrid_x,
                                 stride, pshape):
-        slice_index = tf.argmin(ground_truth, axis=0)[0]
+        slice_index = tf.argmin(input=ground_truth, axis=0)[0]
         ground_truth = tf.gather(ground_truth, tf.range(0, slice_index, dtype=tf.int64))
         ngbbox_y = ground_truth[..., 0] / stride
         ngbbox_x = ground_truth[..., 1] / stride
@@ -203,8 +204,8 @@ class CenterNet:
 
         offset = tf.gather_nd(offset, ngbbox_yx_round_int)
         size = tf.gather_nd(size, ngbbox_yx_round_int)
-        offset_loss = tf.reduce_mean(tf.abs(offset_gt - offset))
-        size_loss = tf.reduce_mean(tf.abs(size_gt - size))
+        offset_loss = tf.reduce_mean(input_tensor=tf.abs(offset_gt - offset))
+        size_loss = tf.reduce_mean(input_tensor=tf.abs(size_gt - size))
         total_loss = keypoints_loss + 0.1*size_loss + offset_loss
         return total_loss
 
@@ -215,7 +216,7 @@ class CenterNet:
         gbbox_x = tf.reshape(gbbox_x, [-1, 1, 1])
         sigma = tf.reshape(sigma, [-1, 1, 1])
 
-        num_g = tf.shape(gbbox_y)[0]
+        num_g = tf.shape(input=gbbox_y)[0]
         meshgrid_y = tf.expand_dims(meshgrid_y, 0)
         meshgrid_y = tf.tile(meshgrid_y, [num_g, 1, 1])
         meshgrid_x = tf.expand_dims(meshgrid_x, 0)
@@ -227,27 +228,27 @@ class CenterNet:
         gt_keypoints = []
         for i in range(self.num_classes):
             exist_i = tf.equal(classid, i)
-            reduce_i = tf.boolean_mask(keyp_penalty_reduce, exist_i, axis=0)
+            reduce_i = tf.boolean_mask(tensor=keyp_penalty_reduce, mask=exist_i, axis=0)
             reduce_i = tf.cond(
-                tf.equal(tf.shape(reduce_i)[0], 0),
-                lambda: zero_like_keyp,
-                lambda: tf.expand_dims(tf.reduce_max(reduce_i, axis=0), axis=-1)
+                pred=tf.equal(tf.shape(input=reduce_i)[0], 0),
+                true_fn=lambda: zero_like_keyp,
+                false_fn=lambda: tf.expand_dims(tf.reduce_max(input_tensor=reduce_i, axis=0), axis=-1)
             )
             reduction.append(reduce_i)
 
-            gbbox_yx_i = tf.boolean_mask(gbbox_yx, exist_i)
+            gbbox_yx_i = tf.boolean_mask(tensor=gbbox_yx, mask=exist_i)
             gt_keypoints_i = tf.cond(
-                tf.equal(tf.shape(gbbox_yx_i)[0], 0),
-                lambda: zero_like_keyp,
-                lambda: tf.expand_dims(tf.sparse.to_dense(tf.sparse.SparseTensor(gbbox_yx_i, tf.ones_like(gbbox_yx_i[..., 0], tf.float32), dense_shape=pshape), validate_indices=False),
+                pred=tf.equal(tf.shape(input=gbbox_yx_i)[0], 0),
+                true_fn=lambda: zero_like_keyp,
+                false_fn=lambda: tf.expand_dims(tf.sparse.to_dense(tf.sparse.SparseTensor(gbbox_yx_i, tf.ones_like(gbbox_yx_i[..., 0], tf.float32), dense_shape=pshape), validate_indices=False),
                                        axis=-1)
             )
             gt_keypoints.append(gt_keypoints_i)
         reduction = tf.concat(reduction, axis=-1)
         gt_keypoints = tf.concat(gt_keypoints, axis=-1)
-        keypoints_pos_loss = -tf.pow(1.-tf.sigmoid(keypoints), 2.) * tf.log_sigmoid(keypoints) * gt_keypoints
-        keypoints_neg_loss = -tf.pow(1.-reduction, 4) * tf.pow(tf.sigmoid(keypoints), 2.) * (-keypoints+tf.log_sigmoid(keypoints)) * (1.-gt_keypoints)
-        keypoints_loss = tf.reduce_sum(keypoints_pos_loss) / tf.cast(num_g, tf.float32) + tf.reduce_sum(keypoints_neg_loss) / tf.cast(num_g, tf.float32)
+        keypoints_pos_loss = -tf.pow(1.-tf.sigmoid(keypoints), 2.) * tf.math.log_sigmoid(keypoints) * gt_keypoints
+        keypoints_neg_loss = -tf.pow(1.-reduction, 4) * tf.pow(tf.sigmoid(keypoints), 2.) * (-keypoints+tf.math.log_sigmoid(keypoints)) * (1.-gt_keypoints)
+        keypoints_loss = tf.reduce_sum(input_tensor=keypoints_pos_loss) / tf.cast(num_g, tf.float32) + tf.reduce_sum(input_tensor=keypoints_neg_loss) / tf.cast(num_g, tf.float32)
         return keypoints_loss
 
     # from cornernet
@@ -267,24 +268,24 @@ class CenterNet:
         c3 = (min_overlap - 1.) * width * height
         sq3 = tf.sqrt(b3 ** 2. - 4. * a3 * c3)
         r3 = (b3 + sq3) / 2.
-        return tf.reduce_min([r1, r2, r3])
+        return tf.reduce_min(input_tensor=[r1, r2, r3])
 
     def _init_session(self):
-        self.sess = tf.InteractiveSession()
-        self.sess.run(tf.global_variables_initializer())
+        self.sess = tf.compat.v1.InteractiveSession()
+        self.sess.run(tf.compat.v1.global_variables_initializer())
         if self.mode == 'train':
             self.sess.run(self.train_initializer)
 
     def _create_saver(self):
-        weights = tf.trainable_variables('backone')
-        self.pretrained_saver = tf.train.Saver(weights)
-        self.saver = tf.train.Saver()
-        self.best_saver = tf.train.Saver()
+        weights = tf.compat.v1.trainable_variables('backone')
+        self.pretrained_saver = tf.compat.v1.train.Saver(weights)
+        self.saver = tf.compat.v1.train.Saver()
+        self.best_saver = tf.compat.v1.train.Saver()
 
     def _create_summary(self):
-        with tf.variable_scope('summaries'):
-            tf.summary.scalar('loss', self.loss)
-            self.summary_op = tf.summary.merge_all()
+        with tf.compat.v1.variable_scope('summaries'):
+            tf.compat.v1.summary.scalar('loss', self.loss)
+            self.summary_op = tf.compat.v1.summary.merge_all()
 
     def train_one_epoch(self, lr):
         self.is_training = True
@@ -293,6 +294,7 @@ class CenterNet:
         num_iters = self.num_train // self.batch_size
         for i in range(num_iters):
             _, loss = self.sess.run([self.train_op, self.loss], feed_dict={self.lr: lr})
+            Progbar(num_iters,stateful_metrics={'loss':loss})
             sys.stdout.write('\r>> ' + 'iters '+str(i+1)+str('/')+str(num_iters)+' loss '+str(loss))
             sys.stdout.flush()
             mean_loss.append(loss)
@@ -311,8 +313,8 @@ class CenterNet:
             saver = self.saver
         else:
             saver = self.best_saver
-        if not tf.gfile.Exists(os.path.dirname(path)):
-            tf.gfile.MakeDirs(os.path.dirname(path))
+        if not tf.io.gfile.exists(os.path.dirname(path)):
+            tf.io.gfile.makedirs(os.path.dirname(path))
             print(os.path.dirname(path), 'does not exist, create it done')
         saver.save(self.sess, path, global_step=self.global_step)
         print('save', mode, 'model in', path, 'successfully')
@@ -326,7 +328,7 @@ class CenterNet:
         print('load pretrained weight', path, 'successfully')
 
     def _bn(self, bottom):
-        bn = tf.layers.batch_normalization(
+        bn = tf.compat.v1.layers.batch_normalization(
             inputs=bottom,
             axis=3 if self.data_format == 'channels_last' else 1,
             training=self.is_training
@@ -334,7 +336,7 @@ class CenterNet:
         return bn
 
     def _conv_bn_activation(self, bottom, filters, kernel_size, strides, activation=tf.nn.relu):
-        conv = tf.layers.conv2d(
+        conv = tf.compat.v1.layers.conv2d(
             inputs=bottom,
             filters=filters,
             kernel_size=kernel_size,
@@ -349,7 +351,7 @@ class CenterNet:
             return bn
 
     def _dconv_bn_activation(self, bottom, filters, kernel_size, strides, activation=tf.nn.relu):
-        conv = tf.layers.conv2d_transpose(
+        conv = tf.compat.v1.layers.conv2d_transpose(
             inputs=bottom,
             filters=filters,
             kernel_size=kernel_size,
@@ -363,7 +365,7 @@ class CenterNet:
         return bn
 
     def _separable_conv_layer(self, bottom, filters, kernel_size, strides, activation=tf.nn.relu):
-        conv = tf.layers.separable_conv2d(
+        conv = tf.compat.v1.layers.separable_conv2d(
             inputs=bottom,
             filters=filters,
             kernel_size=kernel_size,
@@ -381,11 +383,11 @@ class CenterNet:
         conv = self._conv_bn_activation(bottom, filters, 3, 1)
         conv = self._conv_bn_activation(conv, filters, 3, 1)
         axis = 3 if self.data_format == 'channels_last' else 1
-        input_channels = tf.shape(bottom)[axis]
+        input_channels = tf.shape(input=bottom)[axis]
         shutcut = tf.cond(
-            tf.equal(input_channels, filters),
-            lambda: bottom,
-            lambda: self._conv_bn_activation(bottom, filters, 1, 1)
+            pred=tf.equal(input_channels, filters),
+            true_fn=lambda: bottom,
+            false_fn=lambda: self._conv_bn_activation(bottom, filters, 1, 1)
         )
         return conv + shutcut
 
@@ -403,7 +405,7 @@ class CenterNet:
         return aggregation
 
     def _max_pooling(self, bottom, pool_size, strides, name=None):
-        return tf.layers.max_pooling2d(
+        return tf.compat.v1.layers.max_pooling2d(
             inputs=bottom,
             pool_size=pool_size,
             strides=strides,
@@ -413,7 +415,7 @@ class CenterNet:
         )
 
     def _avg_pooling(self, bottom, pool_size, strides, name=None):
-        return tf.layers.average_pooling2d(
+        return tf.compat.v1.layers.average_pooling2d(
             inputs=bottom,
             pool_size=pool_size,
             strides=strides,
@@ -423,7 +425,7 @@ class CenterNet:
         )
 
     def _dropout(self, bottom, name):
-        return tf.layers.dropout(
+        return tf.compat.v1.layers.dropout(
             inputs=bottom,
             rate=self.prob,
             training=self.is_training,

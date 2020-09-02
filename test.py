@@ -6,6 +6,8 @@ import tensorflow as tf
 import numpy as np
 import CenterNet as net
 import os
+
+tf.compat.v1.disable_eager_execution()
 # import matplotlib.pyplot as plt
 # import matplotlib.patches as patches
 # from skimage import io, transform
@@ -13,9 +15,9 @@ import os
 # os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
 # os.environ['CUDA_VISIBLE_DEVICES'] = '2'
 lr = 0.001
-batch_size = 15
+batch_size = 2
 buffer_size = 256
-epochs = 160
+epochs = 10
 reduce_lr_epoch = []
 config = {
     'mode': 'train',                                       # 'train', 'test'
@@ -35,19 +37,19 @@ config = {
 image_augmentor_config = {
     'data_format': 'channels_last',
     'output_shape': [384, 384],
-    'zoom_size': [400, 400],
+    'zoom_size': None,#[400, 400],
     'crop_method': 'random',
-    'flip_prob': [0., 0.5],
+    'flip_prob': None,#[0., 0.5],
     'fill_mode': 'BILINEAR',
-    'keep_aspect_ratios': False,
+    'keep_aspect_ratios': True,
     'constant_values': 0.,
-    'color_jitter_prob': 0.5,
-    'rotate': [0.5, -5., -5.],
-    'pad_truth_to': 60,
+    'color_jitter_prob': None,# 0.5,
+    'rotate': None,#[0.5, -5., -5.],
+    'pad_truth_to': 70,
 }
 
-data = os.listdir('./voc2007/')
-data = [os.path.join('./voc2007/', name) for name in data]
+data = os.listdir('./data/')
+data = [os.path.join('./data/', name) for name in data]
 
 train_gen = voc_utils.get_generator(data,
                                     batch_size, buffer_size, image_augmentor_config)
@@ -62,7 +64,7 @@ centernet = net.CenterNet(config, trainset_provider)
 # centernet.load_weight('./centernet/test-8350')
 # centernet.load_pretrained_weight('./centernet/test-8350')
 for i in range(epochs):
-    print('-'*25, 'epoch', i, '-'*25)
+    print('Epoch %d/%d'%(i,epochs))
     if i in reduce_lr_epoch:
         lr = lr/10.
         print('reduce lr, lr=', lr, 'now')
